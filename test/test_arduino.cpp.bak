@@ -1,0 +1,318 @@
+#include <Arduino.h>
+#include <cassert>
+#include <cmath>
+#include <ctime>
+#include <string>
+#include <vector>
+#include "AstronomyCalculator.h"
+
+class AstronomyTest {
+private:
+    struct TestLocation {
+        std::string name;
+        double latitude;
+        double longitude;
+    };
+
+    struct TestDate {
+        std::string name;
+        int year, month, day;
+        time_t timestamp;
+    };
+
+    struct ExpectedResults {
+        std::string sunriseTime;    // HHMM format
+        std::string sunsetTime;     // HHMM format
+        double sunAzimuthAtRise;    // degrees
+        int dayLengthMinutes;       // total minutes of sunlight
+        std::string location;
+        std::string date;
+    };
+
+    // Test locations
+    std::vector<TestLocation> locations = {
+        {"New York", 40.7128, -74.0060},
+        {"Baltimore", 39.2904, -76.6122},
+        {"Los Angeles", 34.0522, -118.2437},
+        {"Miami", 25.7617, -80.1918}
+    };
+
+    // Test dates
+    std::vector<TestDate> testDates;
+
+    // Expected results from published astronomical data
+    std::vector<ExpectedResults> expectedResults = {
+        // January 1, 2026
+        {"0719", "1651", 122.0, 567, "New York", "Jan 1, 2026"},
+        {"0714", "1656", 118.0, 582, "Baltimore", "Jan 1, 2026"},
+        {"0659", "1655", 117.0, 596, "Los Angeles", "Jan 1, 2026"},
+        {"0703", "1758", 112.0, 655, "Miami", "Jan 1, 2026"},
+
+        // June 15, 2026 (near summer solstice)
+        {"0527", "2008", 62.0, 881, "New York", "Jun 15, 2026"},
+        {"0534", "2001", 65.0, 867, "Baltimore", "Jun 15, 2026"},
+        {"0541", "2006", 61.0, 865, "Los Angeles", "Jun 15, 2026"},
+        {"0621", "2003", 68.0, 822, "Miami", "Jun 15, 2026"},
+
+        // December 25, 2026 (near winter solstice)
+        {"0725", "1646", 123.0, 561, "New York", "Dec 25, 2026"},
+        {"0720", "1651", 119.0, 571, "Baltimore", "Dec 25, 2026"},
+        {"0657", "1650", 118.0, 593, "Los Angeles", "Dec 25, 2026"},
+        {"0708", "1753", 113.0, 645, "Miami", "Dec 25, 2026"}
+    };
+
+    time_t createTimestamp(int year, int month, int day) {
+        struct tm timeinfo = {};
+        timeinfo.tm_year = year - 1900;
+        timeinfo.tm_mon = month - 1;
+        timeinfo.tm_mday = day;
+        timeinfo.tm_hour = 12; // Noon
+        timeinfo.tm_min = 0;
+        timeinfo.tm_sec = 0;
+        timeinfo.tm_isdst = -1; // Let system determine DST
+
+        return mktime(&timeinfo);
+    }
+
+    bool timeWithinTolerance(const std::string& actual, const std::string& expected, int toleranceMinutes = 5) {
+        if (actual.empty() || expected.empty()) return false;
+
+        int actualHour = std::stoi(actual.substr(0, 2));
+        int actualMin = std::stoi(actual.substr(2, 2));
+        int actualTotalMin = actualHour * 60 + actualMin;
+
+        int expectedHour = std::stoi(expected.substr(0, 2));
+        int expectedMinute = std::stoi(expected.substr(2, 2));
+        int expectedTotalMin = expectedHour * 60 + expectedMinute;
+
+        return std::abs(actualTotalMin - expectedTotalMin) <= toleranceMinutes;
+    }
+
+    bool angleWithinTolerance(double actual, double expected, double toleranceDegrees = 3.0) {
+        return std::abs(actual - expected) <= toleranceDegrees;
+    }
+
+    bool minutesWithinTolerance(int actual, int expected, int toleranceMinutes = 10) {
+        return std::abs(actual - expected) <= toleranceMinutes;
+    }
+
+public:
+    AstronomyTest() {
+        // Initialize test dates
+        testDates = {
+            {"Jan 1, 2026", 2026, 1, 1, createTimestamp(2026, 1, 1)},
+            {"Jun 15, 2026", 2026, 6, 15, createTimestamp(2026, 6, 15)},
+            {"Dec 25, 2026", 2026, 12, 25, createTimestamp(2026, 12, 25)}
+        };
+    }
+
+    void runAllTests() {
+        Serial.println("=== AstronomyCalculator Unit Tests ===");
+        Serial.println("Testing against published astronomical data");
+        Serial.println();
+
+        int totalTests = 0;
+        int passedTests = 0;
+
+        // Run location/date combination tests
+        for (const auto& location : locations) {
+            for (const auto& date : testDates) {
+                totalTests++;
+                if (runLocationDateTest(location, date)) {
+                    passedTests++;
+                }
+            }
+        }
+
+        // Additional functionality tests
+        Serial.println("=== Functionality Tests ===");
+        totalTests++;
+        if (testMoonPhaseCalculation()) passedTests++;
+
+        totalTests++;
+        if (testBoundaryConditions()) passedTests++;
+
+        totalTests++;
+        if (testConsistencyChecks()) passedTests++;
+
+        // Print summary
+        Serial.println("=== Test Summary ===");
+        Serial.print("Passed: ");
+        Serial.print(passedTests);
+        Serial.print("/");
+        Serial.print(totalTests);
+        Serial.println(" tests");
+
+        float successRate = (float)passedTests / totalTests * 100.0;
+        Serial.print("Success Rate: ");
+        Serial.print(successRate, 1);
+        Serial.println("%");
+
+        if (passedTests == totalTests) {
+            Serial.println("🎉 ALL TESTS PASSED!");
+        } else {
+            Serial.println("❌ Some tests failed. Check implementation.");
+        }
+    }
+
+private:
+    bool runLocationDateTest(const TestLocation& loc, const TestDate& date) {
+        Serial.print("Testing ");
+        Serial.print(loc.name.c_str());
+        Serial.print(" on ");
+        Serial.print(date.name.c_str());
+        Serial.println("...");
+
+        // Find expected results for this location/date combination
+        ExpectedResults expected;
+        bool foundExpected = false;
+
+        for (const auto& result : expectedResults) {
+            if (result.location == loc.name && result.date == date.name) {
+                expected = result;
+                foundExpected = true;
+                break;
+            }
+        }
+
+        if (!foundExpected) {
+            Serial.print("  ❌ No expected results found for ");
+            Serial.print(loc.name.c_str());
+            Serial.print(" on ");
+            Serial.println(date.name.c_str());
+            return false;
+        }
+
+        // Create calculator and run test
+        AstronomyCalculator astro(loc.latitude, loc.longitude, date.timestamp);
+
+        bool allPassed = true;
+
+        // Test sunrise time
+        if (!timeWithinTolerance(astro.sunRiseTodayHHMM, expected.sunriseTime)) {
+            Serial.print("  ❌ Sunrise: expected ");
+            Serial.print(expected.sunriseTime.c_str());
+            Serial.print(", got ");
+            Serial.println(astro.sunRiseTodayHHMM.c_str());
+            allPassed = false;
+        } else {
+            Serial.print("  ✅ Sunrise: ");
+            Serial.println(astro.sunRiseTodayHHMM.c_str());
+        }
+
+        // Test sunset time
+        if (!timeWithinTolerance(astro.sunSetTodayHHMM, expected.sunsetTime)) {
+            Serial.print("  ❌ Sunset: expected ");
+            Serial.print(expected.sunsetTime.c_str());
+            Serial.print(", got ");
+            Serial.println(astro.sunSetTodayHHMM.c_str());
+            allPassed = false;
+        } else {
+            Serial.print("  ✅ Sunset: ");
+            Serial.println(astro.sunSetTodayHHMM.c_str());
+        }
+
+        // Test sun azimuth at rise
+        if (!angleWithinTolerance(astro.sunAzimuthAtRise, expected.sunAzimuthAtRise)) {
+            Serial.print("  ❌ Sun azimuth at rise: expected ");
+            Serial.print(expected.sunAzimuthAtRise, 1);
+            Serial.print("°, got ");
+            Serial.print(astro.sunAzimuthAtRise, 1);
+            Serial.println("°");
+            allPassed = false;
+        } else {
+            Serial.print("  ✅ Sun azimuth at rise: ");
+            Serial.print(astro.sunAzimuthAtRise, 1);
+            Serial.println("°");
+        }
+
+        // Test day length
+        if (!minutesWithinTolerance(astro.minutesSunVisible, expected.dayLengthMinutes)) {
+            Serial.print("  ❌ Day length: expected ");
+            Serial.print(expected.dayLengthMinutes);
+            Serial.print(" min, got ");
+            Serial.print(astro.minutesSunVisible);
+            Serial.println(" min");
+            allPassed = false;
+        } else {
+            Serial.print("  ✅ Day length: ");
+            Serial.print(astro.minutesSunVisible);
+            Serial.println(" minutes");
+        }
+
+        Serial.println();
+        return allPassed;
+    }
+
+    bool testMoonPhaseCalculation() {
+        Serial.println("Testing moon phase calculation...");
+
+        // Test known new moon date (approximate)
+        time_t newMoonDate = createTimestamp(2026, 1, 13); // Known new moon
+        AstronomyCalculator astroNewMoon(40.7128, -74.0060, newMoonDate);
+        std::string newMoonPhase = astroNewMoon.moonPhase();
+
+        if (newMoonPhase != "New Moon" && newMoonPhase != "Waxing Crescent") {
+            Serial.print("  ❌ Expected phase near New Moon on Jan 13, 2026, got: ");
+            Serial.println(newMoonPhase.c_str());
+            return false;
+        }
+
+        Serial.println("  ✅ Moon phase calculation working");
+        return true;
+    }
+
+    bool testBoundaryConditions() {
+        Serial.println("Testing boundary conditions...");
+
+        time_t testDate = createTimestamp(2026, 6, 21); // Summer solstice
+        AstronomyCalculator astroNorth(65.0, -150.0, testDate); // Northern Alaska
+
+        // In northern latitudes during summer, days should be very long
+        if (astroNorth.minutesSunVisible < 1000) { // > 16 hours
+            Serial.print("  ❌ Expected very long day in northern Alaska in summer, got ");
+            Serial.print(astroNorth.minutesSunVisible);
+            Serial.println(" minutes");
+            return false;
+        }
+
+        Serial.println("  ✅ Boundary conditions handled correctly");
+        return true;
+    }
+
+    bool testConsistencyChecks() {
+        Serial.println("Testing internal consistency...");
+
+        time_t testDate = createTimestamp(2026, 3, 20); // Spring equinox
+        AstronomyCalculator astro(40.7128, -74.0060, testDate);
+
+        // At equinox, day length should be close to 12 hours (720 minutes)
+        int expectedEquinoxLength = 720; // 12 hours
+        if (std::abs(astro.minutesSunVisible - expectedEquinoxLength) > 30) {
+            Serial.print("  ❌ Day length at equinox should be ~12 hours, got ");
+            Serial.print(astro.minutesSunVisible);
+            Serial.println(" minutes");
+            return false;
+        }
+
+        Serial.println("  ✅ Internal consistency checks passed");
+        return true;
+    }
+};
+
+// Arduino-style test runner
+void setup() {
+    Serial.begin(115200);
+    delay(2000);  // Wait for serial monitor
+
+    Serial.println("=== ESP32 Astronomy Calculator Tests ===");
+
+    AstronomyTest test;
+    test.runAllTests();
+    Serial.println("✅ All tests completed!");
+}
+
+void loop() {
+    // Tests run once in setup(), nothing to do in loop
+    delay(1000);
+}

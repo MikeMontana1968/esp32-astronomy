@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pio:*)",
+      "Read(//c/Users/mikem/OneDrive/Documents/PlatformIO/Projects/esp32-astronomy/**)",
+      "Read(//c/Users/mikem/OneDrive/Documents/PlatformIO/Projects/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

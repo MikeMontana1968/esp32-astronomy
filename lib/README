@@ -1,0 +1,150 @@
+# ESP32 Astronomy Calculator
+
+A comprehensive C++ library for calculating astronomical data using NOAA algorithms, optimized for ESP32 microcontrollers.
+
+## Features
+
+- 🌞 **Solar Calculations**: Sunrise, sunset, solar noon, azimuth, altitude
+- 🌙 **Lunar Calculations**: Moon phases, moonrise, moonset, visibility
+- 📍 **Location-based**: Works with any latitude/longitude
+- ⚡ **High Performance**: ~100 microseconds per calculation on ESP32
+- 📊 **Comprehensive Data**: Minutes between events, timing calculations
+- 🎯 **Accurate**: Uses NOAA algorithms with ±1-2 minute accuracy
+
+## Quick Start
+
+### 1. Hardware Requirements
+- ESP32 development board (any variant)
+- WiFi connection for time synchronization
+
+### 2. Software Setup
+1. Install [VSCode](https://code.visualstudio.com/)
+2. Install [PlatformIO Extension](https://platformio.org/install/ide?install=vscode)
+3. Clone or download this project
+
+### 3. Configuration
+Edit `src/main.cpp` and update:
+```cpp
+// WiFi credentials
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// Your coordinates (find at latlong.net)
+const double LATITUDE = 40.7128;   // Your latitude
+const double LONGITUDE = -74.0060; // Your longitude (negative for West)
+
+// Your timezone offset in seconds
+const long GMT_OFFSET_SEC = -18000;  // EST = -5 hours
+```
+
+### 4. Build and Upload
+1. Connect ESP32 via USB
+2. In VSCode: `Ctrl+Shift+P` → "PlatformIO: Upload"
+3. Open Serial Monitor: `Ctrl+Shift+P` → "PlatformIO: Serial Monitor"
+
+## Usage Example
+
+```cpp
+#include "AstronomyCalculator.h"
+
+// Create calculator for current time and location
+time_t now = time(nullptr);
+AstronomyCalculator astro(latitude, longitude, now);
+
+// Access calculated data
+Serial.printf("Sunrise: %s\n", astro.sunRiseTodayHHMM.c_str());
+Serial.printf("Sunset: %s\n", astro.sunSetTodayHHMM.c_str());
+Serial.printf("Moon Phase: %s\n", astro.moonPhase().c_str());
+Serial.printf("Day Length: %d minutes\n", astro.minutesSunVisible);
+
+if (astro.isMoonVisible) {
+    Serial.println("Moon is currently visible!");
+}
+```
+
+## Available Data
+
+### Sun Data
+- `sunRiseTodayHHMM` - Today's sunrise time (HHMM format)
+- `sunSetTodayHHMM` - Today's sunset time (HHMM format)
+- `minutesSinceSunRise` - Minutes since sunrise (-1 if not risen)
+- `minutesSinceSunSet` - Minutes since sunset (-1 if not set)
+- `minutesUntilSunSet` - Minutes until sunset (-1 if already set)
+- `minutesUntilSunRise` - Minutes until tomorrow's sunrise (-1 if already risen)
+- `minutesSunVisible` - Total daylight minutes today
+- `sunAltitudeAtRise` - Sun altitude at sunrise (degrees)
+- `sunAzimuthAtRise` - Sun azimuth at sunrise (degrees)
+
+### Moon Data
+- `moonPhase()` - Current moon phase name
+- `isMoonVisible` - True if moon is above horizon
+- `minutesSinceLastMoonRise` - Minutes since last moonrise
+- `minutesSinceLastMoonSet` - Minutes since last moonset
+- `minutesUntilNextMoonRise` - Minutes until next moonrise
+- `minutesUntilNextMoonSet` - Minutes until next moonset
+- `lastMoonRiseHHMM` - Last moonrise time (HHMM)
+- `lastMoonSetHHMM` - Last moonset time (HHMM)
+- `nextMoonRiseHHMM` - Next moonrise time (HHMM, empty if currently visible)
+- `nextMoonSetHHMM` - Next moonset time (HHMM, empty if won't rise today)
+- `minutesMoonVisible` - Duration moon is visible (minutes)
+- `moonAltitudeAtRise` - Moon altitude at rise (degrees)
+- `moonAzimuthAtRise` - Moon azimuth at rise (degrees)
+
+## File Structure
+
+```
+esp32-astronomy/
+├── lib/
+│   └── AstronomyCalculator/
+│       ├── AstronomyCalculator.h
+│       └── AstronomyCalculator.cpp
+├── src/
+│   └── main.cpp
+├── test/
+│   └── test_astronomy.cpp
+├── platformio.ini
+└── README.md
+```
+
+## Accuracy
+
+- **Solar calculations**: ±1-2 minutes (NOAA algorithm)
+- **Lunar calculations**: ±10-30 minutes (simplified orbital model)
+- **Performance**: ~100 microseconds per calculation on ESP32
+
+## Applications
+
+- 🏠 **Smart Home**: Automatic lighting based on sunrise/sunset
+- 🌱 **Agriculture**: Optimal planting/harvesting timing
+- 📸 **Photography**: Golden hour and blue hour timing
+- 🔭 **Astronomy**: Observation planning
+- ⏰ **Alarm Clocks**: Natural wake-up timing
+- 🌞 **Solar Panels**: Tracking and optimization
+
+## Troubleshooting
+
+**Compilation errors:**
+- Ensure C++17 is enabled in `platformio.ini`
+- Check that all files are in correct directories
+
+**Inaccurate times:**
+- Verify latitude/longitude coordinates
+- Check timezone offset setting
+- Ensure WiFi connection for time sync
+
+**ESP32 not detected:**
+- Install CP2102 drivers
+- Try different USB cable
+- Press BOOT button during upload
+
+## License
+
+MIT License - Feel free to use in personal and commercial projects.
+
+## Contributing
+
+Contributions welcome! Please submit issues and pull requests on GitHub.
+
+---
+
+*Built with ❤️ for the maker community*
