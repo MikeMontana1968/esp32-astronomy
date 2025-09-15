@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(.pio/build/native/program.exe)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
