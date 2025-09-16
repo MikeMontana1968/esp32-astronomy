@@ -1,4 +1,5 @@
 #include "GPSManager.h"
+#include <sys/time.h>
 
 GPSManager::GPSManager() {
     Serial.println("GPSManager::GPSManager()");
@@ -207,5 +208,31 @@ bool GPSManager::isDST() {
     }
 
     // December, January, February - no DST
+    return false;
+}
+
+bool GPSManager::setSystemTime() {
+    unsigned long gpsTime = getUnixTimestamp();
+    if (gpsTime == 0) {
+        return false;
+    }
+
+    // Calculate timezone offset based on longitude and DST
+    int timezoneOffset = getTimezoneOffset();
+
+    // Apply timezone offset to GPS UTC time
+    time_t localTime = gpsTime + (timezoneOffset * 3600);
+
+    // Set system time
+    struct timeval tv;
+    tv.tv_sec = localTime;
+    tv.tv_usec = 0;
+
+    if (settimeofday(&tv, NULL) == 0) {
+        Serial.printf("System time set from GPS: %lu (UTC+%d)\n", gpsTime, timezoneOffset);
+        Serial.printf("DST: %s\n", isDST() ? "Yes" : "No");
+        return true;
+    }
+
     return false;
 }

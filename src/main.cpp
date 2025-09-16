@@ -1,35 +1,49 @@
 #include <Arduino.h>
-#include <WiFi.h>
 #include <time.h>
 #include "AstronomyCalculator.h"
+#include "GPSManager.h"
 
-// WiFi credentials
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+GPSManager gpsManager;
+bool timeSet = false;
+time_t gpsTime = 0;
+double latitude = 40.7128;   // Default NYC
+double longitude = -74.0060;
 
-// Location (example: your city)
-const double LATITUDE = 40.7128;   // NYC
-const double LONGITUDE = -74.0060;
+void setupGPS() {
+    Serial.println("Initializing GPS...");
+    gpsManager.begin();
 
-void setupWiFi() {
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(1000);
-        Serial.println("Connecting to WiFi...");
-    }
-    Serial.println("WiFi connected!");
-}
+    // Try to get GPS fix for 60 seconds
+    unsigned long startTime = millis();
+    while (millis() - startTime < 60000) {
+        gpsManager.update();
 
-void setupTime() {
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    Serial.println("Waiting for time sync...");
-    
-    struct tm timeinfo;
-    while (!getLocalTime(&timeinfo)) {
+        if (gpsManager.hasValidFix()) {
+            Serial.println("GPS fix acquired!");
+            latitude = gpsManager.getLatitude();
+            longitude = gpsManager.getLongitude();
+
+            // Set system time from GPS using new method
+            if (gpsManager.setSystemTime()) {
+                timeSet = true;
+                gpsTime = gpsManager.getUnixTimestamp();
+                Serial.printf("Location: %.4f, %.4f\n", latitude, longitude);
+                return;
+            }
+        }
+
         delay(1000);
         Serial.print(".");
     }
-    Serial.println("\nTime synchronized!");
+
+    Serial.println("\nGPS fix timeout - using default location and system time");
+    gpsManager.setDefaultLocation();
+    latitude = gpsManager.getLatitude();
+    longitude = gpsManager.getLongitude();
+
+    // Use current system time if GPS fails
+    gpsTime = time(nullptr);
+    timeSet = (gpsTime > 0);
 }
 
 void setup() {
@@ -38,29 +52,62 @@ void setup() {
     Serial.printf("Build: v%d.%d.%d\n", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
     Serial.println();
 
-    setupWiFi();
-    setupTime();
+    setupGPS();
 }
 
 void loop() {
-    time_t now = time(nullptr);
-    
-    // Create astronomy calculator
-    AstronomyCalculator astro(LATITUDE, LONGITUDE, now);
-    
-    // Display results
-    Serial.println("\n=== Astronomy Data ===");
-    Serial.printf("Sunrise: %s\n", astro.sunRiseTodayHHMM.c_str());
-    Serial.printf("Sunset: %s\n", astro.sunSetTodayHHMM.c_str());
-    Serial.printf("Moon Phase: %s\n", astro.moonPhase().c_str());
-    Serial.printf("Day Length: %d minutes\n", astro.minutesSunVisible);
-    
-    if (astro.isMoonVisible) {
-        Serial.println("Moon is currently visible!");
-    } else {
-        Serial.println("Moon is not currently visible");
+    // Continue updating GPS data
+    gpsManager.update();
+
+    // Update location and time if GPS has valid fix
+    if (gpsManager.hasValidFix()) {
+        latitude = gpsManager.getLatitude();
+        longitude = gpsManager.getLongitude();
+
+        // Update system time if GPS time is available
+        time_t newGpsTime = gpsManager.getUnixTimestamp();
+        if (newGpsTime != gpsTime) {
+            gpsTime = newGpsTime;
+            if (gpsManager.setSystemTime()) {
+                timeSet = true;
+            }
+        }
     }
-    
-    // Wait 1 hour before next calculation
-    delay(3600000);
+
+    if (timeSet) {
+        time_t now = time(nullptr);
+
+        // Create astronomy calculator
+        AstronomyCalculator astro(latitude, longitude, now);
+
+        // Display results every hour
+        static unsigned long lastDisplay = 0;
+        if (millis() - lastDisplay >= 3600000 || lastDisplay == 0) {
+            lastDisplay = millis();
+
+            Serial.println("\n=== Astronomy Data ===");
+            Serial.printf("Location: %.4f, %.4f\n", latitude, longitude);
+            Serial.printf("Sunrise: %s %s Length: %d minutes\n", astro.sunRiseTodayHHMM.c_str(), astro.sunSetTodayHHMM.c_str(), astro.minutesSunVisible);
+            
+            if (astro.isMoonVisible) {
+                Serial.println("Moon is currently visible!");
+                Serial.printf("Moon Rise: %s - %s Phase: %s\n", 
+                    astro.lastMoonRiseHHMM.c_str(), 
+                    astro.nextMoonSetHHMM.c_str(), 
+                    astro.moonPhase().c_str()
+                );
+            } else {
+                Serial.println("Moon is not currently visible");
+                Serial.printf("Moon Rise: %s (Tmrw) - %s Phase: %s\n", 
+                    astro.lastMoonRiseHHMM.c_str(), 
+                    astro.nextMoonSetHHMM.c_str(), 
+                    astro.moonPhase().c_str()
+                );
+            }
+        }
+    } else {
+        Serial.println("Waiting for time sync...");
+    }
+
+    delay(1000);
 }

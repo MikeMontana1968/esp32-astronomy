@@ -28,6 +28,7 @@ public:
     unsigned long getUnixTimestamp();
     int getTimezoneOffset();
     bool isDST();
+    bool setSystemTime();
 
 private:
     TinyGPSPlus gps;
