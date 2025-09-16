@@ -1,10 +1,14 @@
 #include "GPSManager.h"
 #include <sys/time.h>
 
-GPSManager::GPSManager() {
+GPSManager::GPSManager(uint8_t rxPin, uint8_t txPin) {
     Serial.println("GPSManager::GPSManager()");
+    this->rxPin = rxPin;
+    this->txPin = txPin;
     useDefaults = false;
     gpsSerial = nullptr;
+    timeSet = false;
+    showNEMAData = false;
 }
 
 GPSManager::~GPSManager() {
@@ -16,8 +20,8 @@ GPSManager::~GPSManager() {
 
 void GPSManager::begin() {
     Serial.println("GPSManager::begin()");
-    // GPS connected to pins 16 (RX) and 17 (TX)
-    gpsSerial = new SoftwareSerial(16, 17);
+    Serial.printf("GPS using pins: RX=%d, TX=%d\n", rxPin, txPin);
+    gpsSerial = new SoftwareSerial(rxPin, txPin);
     gpsSerial->begin(9600);
 }
 
@@ -25,18 +29,28 @@ void GPSManager::update() {
     static unsigned long last_timestamp = 0;
     // Serial.println("GPSManager::update()"); // Commented out - called frequently
     if (gpsSerial && gpsSerial->available()) {
+        String buffer = "";
         while (gpsSerial->available()) {
-            if (gps.encode(gpsSerial->read())) {
-                unsigned long now = GPSManager::getUnixTimestamp();
-                if(now != last_timestamp) {
-                    last_timestamp = now;
-                    // Serial.print("*** GPSManager::update() - ");
-                    // Serial.printf("%02d:%02d:%02d",
-                    //     gps.time.hour(),
-                    //     gps.time.minute(),
-                    //     gps.time.second()
-                    // );
-                    // Serial.println();
+            char c = gpsSerial->read();
+            buffer += c;
+        }
+        if (buffer.length() > 0) {
+            if (showNEMAData) {
+                Serial.printf("[%d]: %s\n", buffer.length(), buffer.c_str());
+            }
+            for (int i = 0; i < buffer.length(); i++) {
+                if (gps.encode(buffer[i])) {
+                // unsigned long now = GPSManager::getUnixTimestamp();
+                // if(now != last_timestamp) {
+                //     last_timestamp = now;
+                //     Serial.print("*** GPSManager::update() - ");
+                //     Serial.printf("%02d:%02d:%02d",
+                //         gps.time.hour(),
+                //         gps.time.minute(),
+                //         gps.time.second()
+                //     );
+                //     Serial.println();
+                // }
                 }
             }
         }
@@ -231,8 +245,53 @@ bool GPSManager::setSystemTime() {
     if (settimeofday(&tv, NULL) == 0) {
         Serial.printf("System time set from GPS: %lu (UTC+%d)\n", gpsTime, timezoneOffset);
         Serial.printf("DST: %s\n", isDST() ? "Yes" : "No");
+        timeSet = true;
         return true;
     }
 
     return false;
+}
+
+bool GPSManager::initializeWithFix(unsigned long timeoutMs) {
+    Serial.println("Initializing GPS...");
+    begin();
+
+    // Try to get GPS fix for specified timeout
+    unsigned long startTime = millis();
+    while (millis() - startTime < timeoutMs) {
+        update();
+
+        if (hasValidFix()) {
+            Serial.println("GPS fix acquired!");
+
+            // Set system time from GPS
+            if (setSystemTime()) {
+                Serial.printf("Location: %.4f, %.4f\n", getLatitude(), getLongitude());
+                return true;
+            }
+        }
+
+        delay(1000);
+        Serial.print(".");
+    }
+
+    Serial.println("\nGPS fix timeout - using default location");
+    setDefaultLocation();
+    return false;
+}
+
+bool GPSManager::isTimeSet() const {
+    return timeSet;
+}
+
+void GPSManager::setTimeSet(bool value) {
+    timeSet = value;
+}
+
+bool GPSManager::getShowNEMAData() const {
+    return showNEMAData;
+}
+
+void GPSManager::setShowNEMAData(bool value) {
+    showNEMAData = value;
 }

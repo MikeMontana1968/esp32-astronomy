@@ -2,48 +2,27 @@
 #include <time.h>
 #include "AstronomyCalculator.h"
 #include "GPSManager.h"
+#include "HasTimeExpired.h"
 
 GPSManager gpsManager;
-bool timeSet = false;
+HasTimeExpired fiveSecondTimer(5000); // 5 second timer
 time_t gpsTime = 0;
 double latitude = 40.7128;   // Default NYC
 double longitude = -74.0060;
 
 void setupGPS() {
-    Serial.println("Initializing GPS...");
-    gpsManager.begin();
-
-    // Try to get GPS fix for 60 seconds
-    unsigned long startTime = millis();
-    while (millis() - startTime < 60000) {
-        gpsManager.update();
-
-        if (gpsManager.hasValidFix()) {
-            Serial.println("GPS fix acquired!");
-            latitude = gpsManager.getLatitude();
-            longitude = gpsManager.getLongitude();
-
-            // Set system time from GPS using new method
-            if (gpsManager.setSystemTime()) {
-                timeSet = true;
-                gpsTime = gpsManager.getUnixTimestamp();
-                Serial.printf("Location: %.4f, %.4f\n", latitude, longitude);
-                return;
-            }
-        }
-
-        delay(1000);
-        Serial.print(".");
+    if (gpsManager.initializeWithFix(100000)) { // 60 second timeout
+        // GPS fix acquired and system time set
+        gpsTime = gpsManager.getUnixTimestamp();
+    } else {
+        // GPS fix timeout - use current system time if available
+        gpsTime = time(nullptr);
+        gpsManager.setTimeSet(gpsTime > 0);
     }
 
-    Serial.println("\nGPS fix timeout - using default location and system time");
-    gpsManager.setDefaultLocation();
+    // Update location variables
     latitude = gpsManager.getLatitude();
     longitude = gpsManager.getLongitude();
-
-    // Use current system time if GPS fails
-    gpsTime = time(nullptr);
-    timeSet = (gpsTime > 0);
 }
 
 void setup() {
@@ -68,22 +47,20 @@ void loop() {
         time_t newGpsTime = gpsManager.getUnixTimestamp();
         if (newGpsTime != gpsTime) {
             gpsTime = newGpsTime;
-            if (gpsManager.setSystemTime()) {
-                timeSet = true;
-            }
+            gpsManager.setSystemTime();
         }
+    } else {
+        setupGPS(); // Try to reinitialize GPS if no valid fix
     }
 
-    if (timeSet) {
+    if (gpsManager.isTimeSet()) {
         time_t now = time(nullptr);
 
         // Create astronomy calculator
         AstronomyCalculator astro(latitude, longitude, now);
 
         // Display results every hour
-        static unsigned long lastDisplay = 0;
-        if (millis() - lastDisplay >= 3600000 || lastDisplay == 0) {
-            lastDisplay = millis();
+        if (fiveSecondTimer.hasIntervalExpired()) {
 
             Serial.println("\n=== Astronomy Data ===");
             Serial.printf("Location: %.4f, %.4f\n", latitude, longitude);
